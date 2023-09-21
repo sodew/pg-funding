@@ -1,6 +1,27 @@
 import { useEffect, useState } from "react";
-import { getContract } from "../ethereum";
-import Counter from "../contracts/out/Counter.sol/Counter.json";
+// import { getContract } from "../ethereum";
+// import Counter from "../contracts/out/Counter.sol/Counter.json";
+import CommonAds from '../contracts/out/CommonAds.sol/CommonAds.json'
+
+import { useAccount, useConnect, useDisconnect } from 'wagmi'
+import { MetaMaskConnector } from 'wagmi/connectors/metaMask'
+
+function Profile() {
+  const { address, isConnected } = useAccount()
+  const { connect } = useConnect({
+    connector: new MetaMaskConnector(),
+  })
+  const { disconnect } = useDisconnect()
+
+  if (isConnected)
+    return (
+      <div>
+        Connected to {address}
+        <button onClick={() => disconnect()}>Disconnect</button>
+      </div>
+    )
+  return <button onClick={() => connect()}>Connect Wallet</button>
+}
 
 export default function Home() {
   const [count, setCount] = useState(0);
@@ -10,19 +31,19 @@ export default function Home() {
   const [projectBalance, setProjectBalance] = useState(0);
   const [nfts, setNfts] = useState([]);
 
-  useEffect(() => {
-    async function initContract() {
-      const contract = getContract(
-        "0x5FbDB2315678afecb367f032d93F642f64180aa3",
-        Counter.abi,
-        0 // Use the first account as the signer
-      );
-      setContract(contract);
-    //   const initialCount = await contract.getCount();
-    //   setCount(initialCount.toNumber());
-    }
-    initContract();
-  }, []);
+  // useEffect(() => {
+  //   async function initContract() {
+  //     const contract = getContract(
+  //       "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+  //       Counter.abi,
+  //       0 // Use the first account as the signer
+  //     );
+  //     setContract(contract);
+  //   //   const initialCount = await contract.getCount();
+  //   //   setCount(initialCount.toNumber());
+  //   }
+  //   initContract();
+  // }, []);
 
   async function createProject(name) {
     if (!contract) return;
@@ -55,24 +76,25 @@ export default function Home() {
 
   return (
     <div style={{ textAlign: "center" }}>
+      <Profile />
       <h1>Open Source Project Auction</h1>
 
       <h2>Projects created so far: {count}</h2>
-      
+
       <h2>Create a New Project</h2>
       <input
         placeholder="Project Name"
         onChange={(e) => setProjectName(e.target.value)}
       />
       <button onClick={() => createProject(projectName)}>Create Project</button>
-      
+
       <h2>Fetch Project</h2>
       <input
         placeholder="Project ID"
         onChange={(e) => setProjectId(e.target.value)}
       />
       <button onClick={() => fetchProject(projectId)}>Fetch Project</button>
-      
+
       {projectName && (
         <div>
           <h3>Project: {projectName}</h3>
@@ -90,10 +112,10 @@ export default function Home() {
     </div>
   );
 
-//   return (
-//     <div style={{ textAlign: 'center'}}>
-//       <h1>Counter: {count}</h1>
-//       <button onClick={increment}>Increment</button>
-//     </div>
-//   );
+  //   return (
+  //     <div style={{ textAlign: 'center'}}>
+  //       <h1>Counter: {count}</h1>
+  //       <button onClick={increment}>Increment</button>
+  //     </div>
+  //   );
 }
