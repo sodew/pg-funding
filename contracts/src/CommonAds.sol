@@ -36,9 +36,9 @@ contract CommonAds is ERC721 {
         mapping(uint256 => Spot) spots;
     }
 
-    uint256 internal nextSpaceId;
+    uint256 public nextSpaceId;
     int256 internal immutable AUCTION_DECAY;
-    mapping(bytes32 metaId => Metadata meta) public getMetadata;
+    mapping(bytes32 metaId => Metadata meta) public metadata;
     mapping(uint256 spaceId => Space) public spaces;
     mapping(address user => uint256) public balances;
 
@@ -50,8 +50,8 @@ contract CommonAds is ERC721 {
     }
 
     function setMetadata(uint256 subId, Metadata calldata meta) external {
-        bytes32 metaId = _getMetaId(subId);
-        getMetadata[metaId] = meta;
+        bytes32 metaId = _getMetaId(msg.sender, subId);
+        metadata[metaId] = meta;
     }
 
     function create(uint256 subId, uint256[] calldata prices) external {
@@ -63,7 +63,7 @@ contract CommonAds is ERC721 {
             spaceId = ++nextSpaceId;
         }
         Space storage space = spaces[spaceId];
-        space.metaId = _getMetaId(subId);
+        space.metaId = _getMetaId(msg.sender, subId);
         space.owner = msg.sender;
         space.totalSpots = totalPrices;
         for (uint256 i = 0; i < totalPrices;) {
@@ -75,7 +75,9 @@ contract CommonAds is ERC721 {
                 inAuction: true
             });
             // forgefmt: disable-next-item
-            unchecked { ++i; }
+            unchecked {
+                ++i;
+            }
         }
     }
 
@@ -91,7 +93,7 @@ contract CommonAds is ERC721 {
         _transfer(ownerOf(spotId), msg.sender, spotId);
         spot.setPrice = newPrice;
         spot.lastUpdatedAt = block.timestamp;
-        spot.metaId = _getMetaId(metaSubId);
+        spot.metaId = _getMetaId(msg.sender, metaSubId);
         unchecked {
             uint256 refund = msg.value - price;
             if (refund > 0) msg.sender.safeTransferETH(refund);
@@ -105,12 +107,18 @@ contract CommonAds is ERC721 {
         spots = new SpotDetails[](totalSpots);
         for (uint256 i = 0; i < totalSpots;) {
             Spot storage spot = space.spots[i];
-            spots[i].metadata = getMetadata[spot.metaId];
+            spots[i].metadata = metadata[spot.metaId];
             spots[i].price = getPrice(_getSpotId(spaceId, i));
             spots[i].inAuction = spot.inAuction;
             // forgefmt: disable-next-item
-            unchecked { ++i; }
+            unchecked {
+                ++i;
+            }
         }
+    }
+
+    function getMetadata(address owner, uint256 subId) external view returns (Metadata memory) {
+        return metadata[_getMetaId(owner, subId)];
     }
 
     function getPrice(uint256 spotId) public view returns (uint256) {
@@ -136,10 +144,10 @@ contract CommonAds is ERC721 {
         spotId = (spaceId << 8) | spotIndex;
     }
 
-    function _getMetaId(uint256 subId) internal view returns (bytes32 metaId) {
+    function _getMetaId(address owner, uint256 subId) internal pure returns (bytes32 metaId) {
         assembly {
             mstore(0x00, subId)
-            mstore(0x20, caller())
+            mstore(0x20, owner)
             metaId := keccak256(0x00, 0x40)
         }
     }

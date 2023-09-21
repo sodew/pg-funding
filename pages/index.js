@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 // import { getContract } from "../ethereum";
 // import Counter from "../contracts/out/Counter.sol/Counter.json";
-import CommonAds from '../contracts/out/CommonAds.sol/CommonAds.json'
 
-import { useAccount, useConnect, useDisconnect } from 'wagmi'
+import { useAccount, useConnect, useDisconnect, useContractRead } from 'wagmi'
 import { MetaMaskConnector } from 'wagmi/connectors/metaMask'
+import CommonAds from 'src/common-ads'
 
 function Profile() {
   const { address, isConnected } = useAccount()
@@ -12,6 +12,14 @@ function Profile() {
     connector: new MetaMaskConnector(),
   })
   const { disconnect } = useDisconnect()
+  console.log('CommonAds:', CommonAds)
+  const metadata = useContractRead({
+    ...CommonAds,
+    functionName: 'getMetadata',
+    args: [address, 0]
+  })
+
+  console.log('metadata:', metadata.data)
 
   if (isConnected)
     return (

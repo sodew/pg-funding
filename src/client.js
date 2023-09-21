@@ -1,8 +1,14 @@
-import { WagmiConfig, createConfig, mainnet } from 'wagmi'
+import { WagmiConfig, createConfig, mainnet, localhost } from 'wagmi'
 import { createPublicClient, http } from 'viem'
 
+console.log(JSON.stringify(mainnet))
+
 const client = createPublicClient({
-    chain: mainnet,
+    chain: {
+        rpcUrls: {
+            default: { http: ['http://localhost:8545'] }
+        }
+    },
     transport: http()
 })
 
