@@ -19,6 +19,7 @@ function Profile() {
     args: [address, 0]
   })
 
+  //test 
   console.log('metadata:', metadata.data)
 
   if (isConnected)
