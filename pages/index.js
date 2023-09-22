@@ -35,66 +35,92 @@ export default function Home() {
   const [metadata, setMetadata] = useState({ name: "", desc: "", link: "", img: "" });
   const [prices, setPrices] = useState([0, 0, 0]);
 
-  const { writeMetadata } = useContractWrite({
-    ...CommonAds,
-    functionName: 'setMetadata',
-    gasLimit: 300000,
-    args: [0, metadata]
-  });
-
-  const { createProject } = useContractWrite({
-    ...CommonAds,
-    functionName: 'create',
-    gasLimit: 300000,
-    args: [0, prices]
-  })
+  const [spaceId, setSpaceId] = useState(0);
+  const [spaceData, setSpaceData] = useState(null);
 
   const handleInputChange = (event) => {
     const { name, value } = event.target;
     setMetadata((prevState) => ({ ...prevState, [name]: value }));
   };
 
+  {/* Functions for creating a space */ }
+
+  const { write: writeMetadata } = useContractWrite({
+    ...CommonAds,
+    functionName: 'setMetadata',
+    gasLimit: 300000,
+    args: [0, metadata]
+  });
+
+  const { write: createSpace } = useContractWrite({
+    ...CommonAds,
+    functionName: 'create',
+    gasLimit: 300000,
+    args: [0, prices]
+  })
+
+  const handleCreateSpace = async() => {
+    console.log('create space button clicked')
+    await writeMetadata();
+    await createSpace();
+  }
+
+  // Configure the useContractRead hook
+  const fetchSpace = useContractRead({
+    ...CommonAds,
+    functionName: 'getSpace',
+    args: [spaceId],
+    onSuccess: (data) => {
+      console.log('Success:', data);
+      setSpaceData(data);  // Update state with fetched data
+    },
+    onError: (error) => {
+      console.error('Error fetching space:', error);
+    },
+  });
+
+  const handleFetchSpace = () => {
+    console.log('test')
+    if (spaceId && !isNaN(spaceId)) {  // Check if spaceId is defined and is a valid number
+      fetchSpace();
+    } else {
+      console.error('Invalid spaceId:', spaceId);
+    }
+  };
+
+
   return (
     <div style={{ textAlign: "center" }}>
-
 
       <h1>Open Source Project Auction</h1>
 
       <Profile />
 
-      <h2>Create a New Project</h2>
+      <h2>Create a New Space</h2>
 
       <div>
         <input name="name" value={metadata.name} onChange={handleInputChange} placeholder="Name" />
         <input name="desc" value={metadata.desc} onChange={handleInputChange} placeholder="Description" />
         <input name="link" value={metadata.link} onChange={handleInputChange} placeholder="Link" />
         <input name="img" value={metadata.img} onChange={handleInputChange} placeholder="Image URL" />
-        <button onClick={(() => writeMetadata(), () => createProject())}>Submit Metadata</button>
+        <button onClick={handleCreateSpace}>Submit Metadata</button>
       </div>
 
-      <button onClick={(() => handleSubmitMetadata())}>See Metadata</button>
-
-      <h2>Fetch Project</h2>
+      <h2>Fetch Space</h2>
 
       <input
-        placeholder="Project ID"
-        onChange={(e) => setProjectId(e.target.value)}
+        placeholder="Space ID"
+        onChange={(e) => setSpaceId(e.target.value)}
       />
-      <button onClick={() => fetchProject(projectId)}>Fetch Project</button>
+      <button onClick={handleFetchSpace}>Fetch Space</button>
 
-      {/* {projectName && (
+      {spaceData && (
         <div>
-          <h3>Project: {projectName}</h3>
-          <p>Balance: {projectBalance}</p>
-          <ul>
-            {nfts.map((nft, index) => (
-              <li key={index}>
-                <p>NFT!</p>
-              </li>
-            ))}
-          </ul>
+          <h3>Owner: {spaceData.owner}</h3>
+          {/* Render the rest of the space data here */}
+          {/* You can access spaceData.spaceMeta and spaceData.spots */}
         </div>
-      )} */}
+      )}
     </div>
   );
 }
