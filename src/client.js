@@ -6,7 +6,7 @@ console.log(JSON.stringify(mainnet))
 const client = createPublicClient({
     chain: {
         rpcUrls: {
-            default: { http: ['http://localhost:8545'] }
+            default: { http: ['http://localhost:3000'] }
         }
     },
     transport: http()
