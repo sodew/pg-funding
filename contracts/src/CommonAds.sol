@@ -60,7 +60,7 @@ contract CommonAds is ERC721 {
         require(totalPrices == 3);
         uint256 spaceId;
         unchecked {
-            spaceId = ++nextSpaceId;
+            spaceId = nextSpaceId++;
         }
         Space storage space = spaces[spaceId];
         space.metaId = _getMetaId(msg.sender, subId);
@@ -106,9 +106,10 @@ contract CommonAds is ERC721 {
 
     function getSpace(
         uint256 spaceId
-    ) external view returns (address owner, SpotDetails[] memory spots) {
+    ) external view returns (address owner, Metadata memory spaceMeta, SpotDetails[] memory spots) {
         Space storage space = spaces[spaceId];
         owner = space.owner;
+        spaceMeta = metadata[space.metaId];
         uint256 totalSpots = space.totalSpots;
         spots = new SpotDetails[](totalSpots);
         for (uint256 i = 0; i < totalSpots; ) {
