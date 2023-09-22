@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useAccount, useConnect, useDisconnect, useContractRead, useContractWrite } from 'wagmi'
 import { MetaMaskConnector } from 'wagmi/connectors/metaMask'
 import CommonAds from 'src/common-ads'
+import { parseEther } from "viem";
 
 //checks for users wallet connection
 function Profile() {
@@ -59,13 +60,14 @@ export default function Home() {
     args: [0, prices]
   })
 
-  const handleCreateSpace = async() => {
+  const handleCreateSpace = async () => {
     console.log('create space button clicked')
     await writeMetadata();
     await createSpace();
   }
 
-  // Configure the useContractRead hook
+  {/* Functions for fetching a space */ }
+
   const fetchSpace = useContractRead({
     ...CommonAds,
     functionName: 'getSpace',
@@ -80,13 +82,33 @@ export default function Home() {
   });
 
   const handleFetchSpace = () => {
-    console.log('test')
+    console.log('fetching space')
     if (spaceId && !isNaN(spaceId)) {  // Check if spaceId is defined and is a valid number
-      fetchSpace();
+      setSpaceData(fetchSpace.data);
+      console.log(fetchSpace.data)
+      console.log('Space Data', spaceData)
+      console.log('Space Owner', spaceData[0])
+      console.log('Space Owner', spaceData[1].name)
     } else {
       console.error('Invalid spaceId:', spaceId);
     }
   };
+
+  {/* Functions for buying a sponsor spot */ }
+  const { write: buyNFT } = useContractWrite({
+    ...CommonAds,
+    functionName: 'buy',
+    // args: [spotId, 0, newPrice],
+    //spotId: getSpace, spotId = (spaceId << 8) | spotIndex
+    //newPrice: 
+    value: null //current price
+  })
+
+  const handleBuy = () => {
+    console.log('buying nft')
+    //set new price for spot
+    //also need to get existing price from getting space
+  }
 
 
   return (
@@ -114,9 +136,14 @@ export default function Home() {
       />
       <button onClick={handleFetchSpace}>Fetch Space</button>
 
-      {spaceData && (
+      {spaceId && (
         <div>
-          <h3>Owner: {spaceData.owner}</h3>
+          <h3>Owner: {spaceData[0]}</h3>
+          <p>{spaceData[1].img}</p>
+          <p>{spaceData[1].name}</p>
+          <p>{spaceData[1].desc}</p>
+          <p>{spaceData[1].link}</p>
+          <button onClick={handleBuy}>Buy for ${prices[0]}</button>
           {/* Render the rest of the space data here */}
           {/* You can access spaceData.spaceMeta and spaceData.spots */}
         </div>

@@ -46,7 +46,7 @@ contract CommonAds is ERC721 {
     error PaymentBelowPrice();
 
     constructor() {
-        AUCTION_DECAY = Math.lnWad(0.1e18) / int(1 days);
+        AUCTION_DECAY = Math.lnWad(0.1e18) / int256(1 days);
     }
 
     function setMetadata(uint256 subId, Metadata calldata meta) external {
@@ -66,7 +66,7 @@ contract CommonAds is ERC721 {
         space.metaId = _getMetaId(msg.sender, subId);
         space.owner = msg.sender;
         space.totalSpots = totalPrices;
-        for (uint256 i = 0; i < totalPrices; ) {
+        for (uint256 i = 0; i < totalPrices;) {
             _mint(msg.sender, _getSpotId(spaceId, i));
             space.spots[i] = Spot({
                 lastUpdatedAt: block.timestamp,
@@ -86,11 +86,7 @@ contract CommonAds is ERC721 {
         _getSpot(spotId).setPrice = newPrice;
     }
 
-    function buy(
-        uint256 spotId,
-        uint256 metaSubId,
-        uint256 newPrice
-    ) external payable {
+    function buy(uint256 spotId, uint256 metaSubId, uint256 newPrice) external payable {
         uint256 price = getPrice(spotId);
         if (msg.value < price) revert PaymentBelowPrice();
         Spot storage spot = _getSpot(spotId);
@@ -104,15 +100,17 @@ contract CommonAds is ERC721 {
         }
     }
 
-    function getSpace(
-        uint256 spaceId
-    ) external view returns (address owner, Metadata memory spaceMeta, SpotDetails[] memory spots) {
+    function getSpace(uint256 spaceId)
+        external
+        view
+        returns (address owner, Metadata memory spaceMeta, SpotDetails[] memory spots)
+    {
         Space storage space = spaces[spaceId];
         owner = space.owner;
         spaceMeta = metadata[space.metaId];
         uint256 totalSpots = space.totalSpots;
         spots = new SpotDetails[](totalSpots);
-        for (uint256 i = 0; i < totalSpots; ) {
+        for (uint256 i = 0; i < totalSpots;) {
             Spot storage spot = space.spots[i];
             spots[i].metadata = metadata[spot.metaId];
             spots[i].price = getPrice(_getSpotId(spaceId, i));
@@ -124,10 +122,7 @@ contract CommonAds is ERC721 {
         }
     }
 
-    function getMetadata(
-        address owner,
-        uint256 subId
-    ) external view returns (Metadata memory) {
+    function getMetadata(address owner, uint256 subId) external view returns (Metadata memory) {
         return metadata[_getMetaId(owner, subId)];
     }
 
@@ -149,18 +144,12 @@ contract CommonAds is ERC721 {
         return "MISSING";
     }
 
-    function _getSpotId(
-        uint256 spaceId,
-        uint256 spotIndex
-    ) internal pure returns (uint256 spotId) {
+    function _getSpotId(uint256 spaceId, uint256 spotIndex) internal pure returns (uint256 spotId) {
         assert(spotIndex < 256);
         spotId = (spaceId << 8) | spotIndex;
     }
 
-    function _getMetaId(
-        address owner,
-        uint256 subId
-    ) internal pure returns (bytes32 metaId) {
+    function _getMetaId(address owner, uint256 subId) internal pure returns (bytes32 metaId) {
         assembly {
             mstore(0x00, subId)
             mstore(0x20, owner)
@@ -168,18 +157,13 @@ contract CommonAds is ERC721 {
         }
     }
 
-    function _getSpot(
-        uint256 spotId
-    ) internal view returns (Spot storage spot) {
+    function _getSpot(uint256 spotId) internal view returns (Spot storage spot) {
         uint256 spaceId = spotId >> 8;
         uint256 spotIndex = spotId & 0xff;
         return spaces[spaceId].spots[spotIndex];
     }
 
-    function _authorized(
-        address operator,
-        uint256 tokenId
-    ) internal view returns (bool) {
+    function _authorized(address operator, uint256 tokenId) internal view returns (bool) {
         return ownerOf(tokenId) == operator;
     }
 }

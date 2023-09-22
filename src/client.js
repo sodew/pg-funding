@@ -15,5 +15,8 @@ console.log(JSON.stringify(mainnet))
 //     // p[publicProviders()]
 //     transport: http()
 // )
-const client = createPublicClient({ chain: localhost, transport: http() })
+const client = createPublicClient({ chain: {
+    ...localhost,
+    id: 31337
+}, transport: http() })
 export default client
