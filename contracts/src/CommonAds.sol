@@ -7,6 +7,7 @@ import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 
 contract CommonAds is ERC721 {
     using Math for uint256;
+    using Math for int256;
     using SafeTransferLib for address;
 
     struct Metadata {
@@ -18,15 +19,14 @@ contract CommonAds is ERC721 {
 
     struct Spot {
         uint256 setPrice;
-        uint256 lastUpdatedAt;
+        uint256 auctionStartedAt;
         bytes32 metaId;
-        bool inAuction;
     }
 
     struct SpotDetails {
         Metadata metadata;
         uint256 price;
-        bool inAuction;
+        uint256 auctionStartedAt;
     }
 
     struct Space {
@@ -46,7 +46,8 @@ contract CommonAds is ERC721 {
     error PaymentBelowPrice();
 
     constructor() {
-        AUCTION_DECAY = Math.lnWad(0.1e18) / int(1 days);
+        // Decay by 90% (1 - 0.9) every 24h
+        AUCTION_DECAY = Math.lnWad(0.1e18) / int256(1 days);
     }
 
     function setMetadata(uint256 subId, Metadata calldata meta) external {
@@ -66,18 +67,15 @@ contract CommonAds is ERC721 {
         space.metaId = _getMetaId(msg.sender, subId);
         space.owner = msg.sender;
         space.totalSpots = totalPrices;
-        for (uint256 i = 0; i < totalPrices; ) {
+        for (uint256 i = 0; i < totalPrices;) {
             _mint(msg.sender, _getSpotId(spaceId, i));
             space.spots[i] = Spot({
-                lastUpdatedAt: block.timestamp,
+                auctionStartedAt: block.timestamp,
                 setPrice: prices[i],
-                metaId: bytes32(0), // TODO: Make metadata getter return default for empty
-                inAuction: true
+                metaId: bytes32(0) // TODO: Make metadata getter return default for empty
             });
             // forgefmt: disable-next-item
-            unchecked {
-                ++i;
-            }
+            unchecked { ++i; }
         }
     }
 
@@ -86,17 +84,13 @@ contract CommonAds is ERC721 {
         _getSpot(spotId).setPrice = newPrice;
     }
 
-    function buy(
-        uint256 spotId,
-        uint256 metaSubId,
-        uint256 newPrice
-    ) external payable {
+    function buy(uint256 spotId, uint256 metaSubId, uint256 newPrice) external payable {
         uint256 price = getPrice(spotId);
         if (msg.value < price) revert PaymentBelowPrice();
         Spot storage spot = _getSpot(spotId);
         _transfer(ownerOf(spotId), msg.sender, spotId);
         spot.setPrice = newPrice;
-        spot.lastUpdatedAt = block.timestamp;
+        spot.auctionStartedAt = block.timestamp;
         spot.metaId = _getMetaId(msg.sender, metaSubId);
         unchecked {
             uint256 refund = msg.value - price;
@@ -104,36 +98,42 @@ contract CommonAds is ERC721 {
         }
     }
 
-    function getSpace(
-        uint256 spaceId
-    ) external view returns (address owner, Metadata memory spaceMeta, SpotDetails[] memory spots) {
+    function getSpace(uint256 spaceId)
+        external
+        view
+        returns (address owner, Metadata memory spaceMeta, SpotDetails[] memory spots)
+    {
         Space storage space = spaces[spaceId];
         owner = space.owner;
         spaceMeta = metadata[space.metaId];
         uint256 totalSpots = space.totalSpots;
         spots = new SpotDetails[](totalSpots);
-        for (uint256 i = 0; i < totalSpots; ) {
+        for (uint256 i = 0; i < totalSpots;) {
             Spot storage spot = space.spots[i];
             spots[i].metadata = metadata[spot.metaId];
-            spots[i].price = getPrice(_getSpotId(spaceId, i));
-            spots[i].inAuction = spot.inAuction;
+            spots[i].price = spot.setPrice;
+            spots[i].auctionStartedAt = spot.auctionStartedAt;
             // forgefmt: disable-next-item
-            unchecked {
-                ++i;
-            }
+            unchecked { ++i; }
         }
     }
 
-    function getMetadata(
-        address owner,
-        uint256 subId
-    ) external view returns (Metadata memory) {
+    function getMetadata(address owner, uint256 subId) external view returns (Metadata memory) {
         return metadata[_getMetaId(owner, subId)];
     }
 
     function getPrice(uint256 spotId) public view returns (uint256) {
         Spot storage spot = _getSpot(spotId);
-        return spot.setPrice;
+        uint256 price = spot.setPrice;
+        uint256 auctionStartedAt = spot.auctionStartedAt;
+        if (auctionStartedAt != 0) {
+            uint256 delta = block.timestamp - auctionStartedAt;
+            // C = ln(d) / T
+            // p(dt) = p_0 * e^(dt * C)
+            uint256 decay = uint256(Math.expWad(int256(delta) * AUCTION_DECAY));
+            return price.mulWad(decay);
+        }
+        return price;
     }
 
     function name() public pure override returns (string memory) {
@@ -149,18 +149,12 @@ contract CommonAds is ERC721 {
         return "MISSING";
     }
 
-    function _getSpotId(
-        uint256 spaceId,
-        uint256 spotIndex
-    ) internal pure returns (uint256 spotId) {
+    function _getSpotId(uint256 spaceId, uint256 spotIndex) internal pure returns (uint256 spotId) {
         assert(spotIndex < 256);
         spotId = (spaceId << 8) | spotIndex;
     }
 
-    function _getMetaId(
-        address owner,
-        uint256 subId
-    ) internal pure returns (bytes32 metaId) {
+    function _getMetaId(address owner, uint256 subId) internal pure returns (bytes32 metaId) {
         assembly {
             mstore(0x00, subId)
             mstore(0x20, owner)
@@ -168,18 +162,13 @@ contract CommonAds is ERC721 {
         }
     }
 
-    function _getSpot(
-        uint256 spotId
-    ) internal view returns (Spot storage spot) {
+    function _getSpot(uint256 spotId) internal view returns (Spot storage spot) {
         uint256 spaceId = spotId >> 8;
         uint256 spotIndex = spotId & 0xff;
         return spaces[spaceId].spots[spotIndex];
     }
 
-    function _authorized(
-        address operator,
-        uint256 tokenId
-    ) internal view returns (bool) {
+    function _authorized(address operator, uint256 tokenId) internal view returns (bool) {
         return ownerOf(tokenId) == operator;
     }
 }
