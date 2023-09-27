@@ -3,7 +3,9 @@ pragma solidity 0.8.21;
 
 import {ERC721} from "solady/tokens/ERC721.sol";
 import {FixedPointMathLib as Math} from "solady/utils/FixedPointMathLib.sol";
+import {HarbergerMath} from "./utils/HarbergerMath.sol";
 import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
+import {console2 as console} from "forge-std/console2.sol";
 
 contract CommonAds is ERC721 {
     using Math for uint256;
@@ -17,7 +19,15 @@ contract CommonAds is ERC721 {
         string img;
     }
 
+    struct Account {
+        uint256 lastBal;
+        uint256 expenseAcc;
+        uint256 lastUpdated;
+        uint256 payPerSec;
+    }
+
     struct Spot {
+        uint256 rewardDebt;
         uint256 setPrice;
         uint256 auctionStartedAt;
         bytes32 metaId;
@@ -36,11 +46,14 @@ contract CommonAds is ERC721 {
         mapping(uint256 => Spot) spots;
     }
 
-    uint256 public nextSpaceId;
     int256 internal immutable AUCTION_DECAY;
+    uint256 internal constant TAX_RATE = 0.4e18;
+    uint256 internal constant TAX_DECAY_PERIOD = 24 hours;
+
+    uint256 public nextSpaceId;
     mapping(bytes32 metaId => Metadata meta) public metadata;
     mapping(uint256 spaceId => Space) public spaces;
-    mapping(address user => uint256) public balances;
+    mapping(address owner => Account account) public accounts;
 
     error NotSpotOwner();
     error PaymentBelowPrice();
@@ -50,9 +63,23 @@ contract CommonAds is ERC721 {
         AUCTION_DECAY = Math.lnWad(0.1e18) / int256(1 days);
     }
 
+    modifier sync(address owner) {
+        _sync(owner);
+        _;
+    }
+
     function setMetadata(uint256 subId, Metadata calldata meta) external {
         bytes32 metaId = _getMetaId(msg.sender, subId);
         metadata[metaId] = meta;
+    }
+
+    function deposit() external payable sync(msg.sender) {
+        users[msg.sender].lastBal += msg.value;
+    }
+
+    function withdraw(uint256 amount) external payable sync(msg.sender) {
+        users[msg.sender].lastBal -= amount;
+        msg.sender.safeTransferETH(amount);
     }
 
     function create(uint256 subId, uint256[] calldata prices) external {
@@ -70,6 +97,7 @@ contract CommonAds is ERC721 {
         for (uint256 i = 0; i < totalPrices;) {
             _mint(msg.sender, _getSpotId(spaceId, i));
             space.spots[i] = Spot({
+                rewardDebt: 0, // Rewards don't continuously accrue during auction
                 auctionStartedAt: block.timestamp,
                 setPrice: prices[i],
                 metaId: bytes32(0) // TODO: Make metadata getter return default for empty
@@ -84,18 +112,33 @@ contract CommonAds is ERC721 {
         _getSpot(spotId).setPrice = newPrice;
     }
 
-    function buy(uint256 spotId, uint256 metaSubId, uint256 newPrice) external payable {
+    function buy(uint256 spotId, uint256 metaSubId, uint256 newPrice) external payable sync(msg.sender) {
         uint256 price = getPrice(spotId);
         if (msg.value < price) revert PaymentBelowPrice();
         Spot storage spot = _getSpot(spotId);
-        _transfer(ownerOf(spotId), msg.sender, spotId);
-        spot.setPrice = newPrice;
-        spot.auctionStartedAt = block.timestamp;
-        spot.metaId = _getMetaId(msg.sender, metaSubId);
-        unchecked {
-            uint256 refund = msg.value - price;
-            if (refund > 0) msg.sender.safeTransferETH(refund);
+        address spotOwner = ownerOf(spotId);
+        _sync(spotOwner);
+        users[spotOwner].lastBal += price;
+        if (spot.auctionStartedAt != 0) {
+            // TODO: Handle auction proceed
+        } else {
+            _sweepTaxes(spotId);
+            users[spotOwner].payPerSec -= spot.setPrice * TAX_RATE / TAX_PERIOD;
         }
+        _transfer(spotOwner, msg.sender, spotId);
+        users[msg.sender].payPerSec += newPrice * TAX_RATE / TAX_PERIOD;
+        spot.setPrice = newPrice;
+        spot.auctionStartedAt = 0;
+        spot.metaId = _getMetaId(msg.sender, metaSubId);
+        spot.rewardDebt = newPrice * TAX_RATE * users[msg.sender].rewardsAcc / 1e36;
+        unchecked {
+            uint256 extra = msg.value - price;
+            if (extra > 0) users[msg.sender].lastBal += extra;
+        }
+    }
+
+    function sweep(uint256 spotId) external {
+        _sweepTaxes(spotId);
     }
 
     function getSpace(uint256 spaceId)
@@ -133,7 +176,11 @@ contract CommonAds is ERC721 {
             uint256 decay = uint256(Math.expWad(int256(delta) * AUCTION_DECAY));
             return price.mulWad(decay);
         }
-        return price;
+
+        User memory user = users[ownerOf(spotId)];
+        (bool preDecay, uint256 newBal) = _balanceOf(user);
+
+        return preDecay ? price : newBal.mulWad(TAX_PERIOD).divWad(TAX_RATE).divWad(TAX_DECAY_PERIOD);
     }
 
     function name() public pure override returns (string memory) {
@@ -147,6 +194,40 @@ contract CommonAds is ERC721 {
     function tokenURI(uint256) public pure override returns (string memory) {
         // TODO: Add URI
         return "MISSING";
+    }
+
+    function funds(address owner) public view returns (uint256) {
+        (, uint256 bal) = _balanceOf(users[owner]);
+        return bal;
+    }
+
+    function _sync(address owner) internal {
+        User storage user = users[owner];
+        (, user.lastBal, user.expenseAcc) = HarbergerMath.updateAccount(
+            user.lastBal, block.timestamp - user.lastUpdated, user.payPerSec, user.expenseAcc, TAX_DECAY_PERIOD
+        );
+    }
+
+    function _sweepTaxes(uint256 spotId) internal {
+        Spot storage spot = _getSpot(spotId);
+        // If auction skip sweep
+        if (spot.auctionStartedAt != 0) return;
+        address spotOwner = ownerOf(spotId);
+        _sync(spotOwner);
+        uint256 totalRewards = spot.setPrice * TAX_RATE * users[spotOwner].rewardsAcc / 1e36;
+        uint256 newRewards = totalRewards - spot.rewardDebt;
+
+        address spaceOwner = spaces[spotId >> 8].owner;
+        _sync(spaceOwner);
+        users[spaceOwner].lastBal += newRewards;
+
+        spot.rewardDebt = totalRewards;
+    }
+
+    function _balanceOf(User memory user) internal view returns (bool, uint256) {
+        return HarbergerMath.updateBalance(
+            user.lastBal, block.timestamp - user.lastUpdated, user.payPerSec, TAX_DECAY_PERIOD
+        );
     }
 
     function _getSpotId(uint256 spaceId, uint256 spotIndex) internal pure returns (uint256 spotId) {
