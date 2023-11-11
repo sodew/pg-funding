@@ -66,4 +66,5 @@ $ cast --help
 ```
 ### extra
 
+$ cd contracts
 $ forge script script/GetSpaces.s.sol --rpc-url http://localhost:8545
